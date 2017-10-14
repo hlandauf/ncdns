@@ -1,10 +1,12 @@
 package util
 
-import "strings"
-import "gopkg.in/hlandau/madns.v1/merr"
-import "fmt"
-import "regexp"
-import "net/mail"
+import (
+	"fmt"
+	"gopkg.in/hlandau/madns.v1/merr"
+	"net/mail"
+	"regexp"
+	"strings"
+)
 
 // Split a domain name a.b.c.d.e into parts e (the head) and a.b.c.d (the rest).
 func SplitDomainHead(name string) (head, rest string) {
@@ -54,7 +56,7 @@ func SplitDomainTail(name string) (tail, rest string) {
 //   "bit.x.y.z."         -> subname="",      basename="",  rootname="bit.x.y.z"
 //   "d.bit.x.y.z."       -> subname="",      basename="d", rootname="bit.x.y.z"
 //   "c.d.bit.x.y.z."     -> subname="c",     basename="d", rootname="bit.x.y.z"
-//   "a.b.c.d.bit.x.y.z." -> subname="a.b.c",     basename="d", rootname="bit.x.y.z"
+//   "a.b.c.d.bit.x.y.z." -> subname="a.b.c", basename="d", rootname="bit.x.y.z"
 func SplitDomainByFloatingAnchor(qname, anchor string) (subname, basename, rootname string, err error) {
 	qname = strings.TrimRight(qname, ".")
 	parts := strings.Split(qname, ".")
@@ -189,46 +191,6 @@ func ValidateHostName(name string) bool {
 func ValidateRelHostName(name string) bool {
 	return ValidateNameLength(name) && re_relHostName.MatchString(name)
 }
-
-/*
-var re_ownerName  = regexp.MustCompilePOSIX(`^([a-z0-9_][a-z0-9_-]{0,62}\.)*[a-z0-9_][a-z0-9_-]{0,62}\.?$`)
-var re_ownerLabel = regexp.MustCompilePOSIX(`^([a-z0-9_]{1,2}|[a-z0-9_][a-z0-9_-]{0,61}[a-z0-9_])$`)
-
-// A domain name is an owner name complying with the standard rules applied to
-// domain names: No consecutive hyphens except as allowed by IDN, no underscores.
-var re_domainName = regexp.MustCompilePOSIX(`^(([a-z0-9]+-)*[a-z0-9]+\.)*$`)
-
-
-
-// This is used to validate NS records, targets in SRV records, etc. In these cases
-// an IP address is not allowed. Therefore this regex must exclude all-numeric domain names.
-// This is done by requiring the final part to start with an alphabetic character.
-var re_hostName = regexp.MustCompilePOSIX(`^(([a-z0-9_][a-z0-9_-]{0,62}\.)*[a-z_][a-z0-9_-]{0,62}\.?|\.)$`)
-var re_label = regexp.MustCompilePOSIX(`^[a-z_][a-z0-9_-]*$`)
-var re_serviceName = regexp.MustCompilePOSIX(`^[a-z_][a-z0-9_-]*$`)
-var re_domainNameLabel = regexp.MustCompilePOSIX(`^(xn--)?[a-z0-9]+(-[a-z0-9]+)*$`)
-var re_ownerName = regexp.MustCompilePOSIX(`^(|@|([a-z0-9_-]{1,63}\.)*[a-z0-9_-]{1,63}(\.@?)?)$`)
-
-func ValidateHostName(name string) bool {
-	name = dns.Fqdn(name)
-	return len(name) <= 255 && re_hostName.MatchString(name)
-}
-
-func ValidateLabel(name string) bool {
-	return len(name) <= 63 && re_label.MatchString(name)
-}
-
-func ValidateServiceName(name string) bool {
-	return len(name) < 63 && re_serviceName.MatchString(name)
-}
-
-func ValidateDomainNameLabel(name string) bool {
-	return len(name) <= 63 && re_domainNameLabel.MatchString(name)
-}
-
-func ValidateOwnerName(name string) bool {
-	return len(name) <= 255 && re_ownerName.MatchString(name)
-}*/
 
 func ValidateEmail(email string) bool {
 	addr, err := mail.ParseAddress(email)

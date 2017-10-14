@@ -22,7 +22,7 @@ var items = []item{
 	item{"alpha.beta.gamma.delta.", "delta", "alpha.beta.gamma", "alpha", "beta.gamma.delta."},
 }
 
-func TestSplitDomainHead(t *testing.T) {
+func TestSplitDomainHeadTail(t *testing.T) {
 	for i := range items {
 		head, rest := util.SplitDomainHead(items[i].input)
 		tail, trest := util.SplitDomainTail(items[i].input)
@@ -78,6 +78,241 @@ func TestSplitDomainByFloatingAnchor(t *testing.T) {
 		}
 		if err != it.expectedError {
 			t.Errorf("Item %d: error \"%s\" does not equal expected error \"%s\"", i, err, it.expectedError)
+		}
+	}
+}
+
+func TestBasenameToNamecoinKey(t *testing.T) {
+	var items = []struct {
+		basename, ncKey string
+		error           bool
+	}{
+		{"example", "d/example", false},
+		{"examp-le", "d/examp-le", false},
+		{"ex-amp-le", "d/ex-amp-le", false},
+		{"xn--j6w193g", "d/xn--j6w193g", false},
+		{"ex_ample", "", true},
+		{"ex\x00ample", "", true},
+	}
+
+	for i, item := range items {
+		ncKey, err := util.BasenameToNamecoinKey(item.basename)
+		if (err != nil) != item.error {
+			t.Errorf("Item %d: got error %v, expectedError=%v", i, err, item.error)
+			continue
+		}
+		if ncKey != item.ncKey {
+			t.Errorf("Item %d: got %q, expected %q", i, ncKey, item.ncKey)
+		}
+
+		if err != nil {
+			continue
+		}
+
+		basename2, err := util.NamecoinKeyToBasename(item.ncKey)
+		if err != nil {
+			t.Errorf("Item %d: couldn't reverse mapping, got error: %v", i, err)
+			continue
+		}
+
+		if basename2 != item.basename {
+			t.Errorf("Item %d: non-isomorphic mapping: %q -> %q -> %q", i, item.basename, ncKey, basename2)
+		}
+	}
+}
+
+func TestNamecoinKeyToBasename(t *testing.T) {
+	var items = []struct {
+		ncKey, basename string
+		error           bool
+	}{
+		{"d/example", "example", false},
+		{"d/examp-le", "examp-le", false},
+		{"d/xn--j6w193g", "xn--j6w193g", false},
+		{"d/ex_ample", "", true},
+		{"d/ex\x00ample", "", true},
+		{"example", "", true},
+	}
+
+	for i, item := range items {
+		basename, err := util.NamecoinKeyToBasename(item.ncKey)
+		if (err != nil) != item.error {
+			t.Errorf("Item %d: got error %v, expectedError=%v", i, err, item.error)
+			continue
+		}
+		if basename != item.basename {
+			t.Errorf("Item %d: got %q, expected %q", i, basename, item.basename)
+		}
+
+		if err != nil {
+			continue
+		}
+
+		ncKey2, err := util.BasenameToNamecoinKey(basename)
+		if err != nil {
+			t.Errorf("Item %d: couldn't reverse mapping, got error: %v", i, err)
+			continue
+		}
+
+		if ncKey2 != item.ncKey {
+			t.Errorf("Item %d: non-isomorphic mapping: %q -> %q -> %q", i, item.ncKey, basename, ncKey2)
+		}
+	}
+}
+
+func TestValidateNameLength(t *testing.T) {
+	var items = []struct {
+		name string
+		ok   bool
+	}{
+		{"e", true},
+		{"example.name.example", true},
+
+		// 255 chars:
+		{"aaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true},
+		{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true},
+
+		// 256 chars, bad:
+		{"aaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false},
+
+		// 256 chars, good:
+		{"aaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.", true},
+	}
+
+	for i, item := range items {
+		ok := util.ValidateNameLength(item.name)
+		if ok != item.ok {
+			t.Errorf("Item %d: expected ok=%v, got ok=%v", i, item.ok, ok)
+		}
+	}
+}
+
+func TestValidateNames(t *testing.T) {
+	var items = []struct {
+		name            string
+		isOwnerLabel    bool
+		isOwnerName     bool
+		isRelOwnerName  bool
+		isDomainLabel   bool
+		isDomainName    bool
+		isRelDomainName bool
+		isHostLabel     bool
+		isHostName      bool
+		isRelHostName   bool
+		isServiceName   bool
+	}{
+		{"e", true, true, true, true, true, true, true, true, true, true},
+		{"example", true, true, true, true, true, true, true, true, true, true},
+		{"example-with-dashes", true, true, true, true, true, true, true, true, true, true},
+		{"xn--j6w193g", true, true, true, true, true, true, true, true, true, true},
+
+		// Valid owner label, but not a valid domain label or host label.
+		{"e_xample", true, true, true, false, false, false, false, false, false, true},
+
+		// Valid owner label and host label, but not a valid domain label.
+		{"ab--cd", true, true, true, false, false, false, true, true, true, true},
+		{"examp--le", true, true, true, false, false, false, true, true, true, true},
+
+		// Valid fully-qualified name.
+		{"example.", false, true, true, false, true, true, false, true, true, false},
+		{"foo.example.", false, true, true, false, true, true, false, true, true, false},
+		{"e.", false, true, true, false, true, true, false, true, true, false},
+		{"f.e.", false, true, true, false, true, true, false, true, true, false},
+
+		// Malformed.
+		{"a..b", false, false, false, false, false, false, false, false, false, false},
+
+		// Valid as relative name only.
+		{"", false, false, true, false, false, true, false, false, true, false},
+
+		// Not a valid owner label.
+		{"a$b", false, false, false, false, false, false, false, false, false, false},
+
+		// 63-character labels, 256 character total length with trailing dot.
+		{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.", false, true, true, false, true, true, false, true, true, false},
+
+		// Relative syntax.
+		{"@", false, false, true, false, false, true, false, false, true, false},
+		{"foo.@", false, false, true, false, false, true, false, false, true, false},
+		{"@.", false, false, false, false, false, false, false, false, false, false},
+
+		// All domain names processed are expected to be lowercase.
+		{"EXAMPLE", false, false, false, false, false, false, false, false, false, false},
+		{"Example", false, false, false, false, false, false, false, false, false, false},
+		{"examPle", false, false, false, false, false, false, false, false, false, false},
+
+		// Service names are limited to 62 characters because they are preceded by a _.
+		{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true, true, true, true, true, true, true, true, true, false},
+		{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", true, true, true, true, true, true, true, true, true, true},
+	}
+
+	chk := func(i int, f func(n string) bool, name string, shouldBeOK bool, desc string) {
+		isOK := f(name)
+		if isOK != shouldBeOK {
+			t.Errorf("Item %d: %q: expected ok=%v, got ok=%v for %s", i, name, shouldBeOK, isOK, desc)
+		}
+	}
+
+	for i, item := range items {
+		chk(i, util.ValidateOwnerLabel, item.name, item.isOwnerLabel, "owner label")
+		chk(i, util.ValidateOwnerName, item.name, item.isOwnerName, "owner name")
+		chk(i, util.ValidateRelOwnerName, item.name, item.isRelOwnerName, "rel owner name")
+		chk(i, util.ValidateDomainLabel, item.name, item.isDomainLabel, "domain label")
+		chk(i, util.ValidateDomainName, item.name, item.isDomainName, "domain name")
+		chk(i, util.ValidateRelDomainName, item.name, item.isRelDomainName, "rel domain name")
+		chk(i, util.ValidateHostLabel, item.name, item.isHostLabel, "host label")
+		chk(i, util.ValidateHostName, item.name, item.isHostName, "hostname")
+		chk(i, util.ValidateRelHostName, item.name, item.isRelHostName, "rel hostname")
+		chk(i, util.ValidateServiceName, item.name, item.isServiceName, "service name")
+	}
+}
+
+func TestValidateEmail(t *testing.T) {
+	// Basic testing only as the bulk of this is handled by mail.ParseAddress.
+	var items = []struct {
+		address string
+		ok      bool
+	}{
+		{"foo@example.com", true},
+		{"foo", false},
+		{"John Smith <foo@example.com>", false},
+		{"", false},
+	}
+
+	for i, item := range items {
+		ok := util.ValidateEmail(item.address)
+		if ok != item.ok {
+			t.Errorf("Item %d: %q: expected ok=%v, got ok=%v", i, item.address, item.ok, ok)
+		}
+	}
+}
+
+func TestParseFuzzyDomainName(t *testing.T) {
+	var items = []struct {
+		in, out, outNC string
+		ok             bool
+	}{
+		{"d/example", "example", "d/example", true},
+		{"example.bit", "example", "d/example", true},
+		{"example.bit.", "example", "d/example", true},
+		{"examp--le.bit.", "", "", false},
+		{"un.known", "", "", false},
+		{"un/known", "", "", false},
+		{"bareword", "", "", false},
+	}
+
+	for i, item := range items {
+		out, outNC, err := util.ParseFuzzyDomainNameNC(item.in)
+		if (err == nil) != item.ok {
+			t.Errorf("Item %d: %q: expected ok=%v, got ok=%v (%v)", i, item.in, item.ok, err == nil, err)
+		}
+
+		if out != item.out {
+			t.Errorf("Item %d: %q: expected output %q, got %q", i, item.in, item.out, out)
+		}
+
+		if outNC != item.outNC {
+			t.Errorf("Item %d: %q: expected output %q, got %q", i, item.in, item.outNC, outNC)
 		}
 	}
 }
