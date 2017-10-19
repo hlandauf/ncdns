@@ -58,6 +58,10 @@ type Config struct {
 	TplSet               string `default:"std" usage:"The template set to use"`
 	TplPath              string `default:"" usage:"The path to the tpl directory (empty: autodetect)"`
 
+	// These are passed through to backend.Config and used only by testing code
+	fakeNames map[string]string
+	fakesOnly bool
+
 	ConfigDir string // path to interpret filenames relative to
 }
 
@@ -103,11 +107,15 @@ func New(cfg *Config) (s *Server, err error) {
 
 	b, err := backend.New(&backend.Config{
 		NamecoinConn:         s.namecoinConn,
-		CacheMaxEntries:      cfg.CacheMaxEntries,
-		SelfIP:               cfg.SelfIP,
-		Hostmaster:           cfg.Hostmaster,
+		CacheMaxEntries:      s.cfg.CacheMaxEntries,
+		SelfIP:               s.cfg.SelfIP,
+		Hostmaster:           s.cfg.Hostmaster,
 		CanonicalNameservers: s.cfg.canonicalNameservers,
 		VanityIPs:            s.cfg.vanityIPs,
+
+		// Passed through for testing use only.
+		FakeNames: s.cfg.fakeNames,
+		FakesOnly: s.cfg.fakesOnly,
 	})
 	if err != nil {
 		return
