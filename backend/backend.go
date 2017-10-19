@@ -1,19 +1,21 @@
 package backend
 
-import "github.com/miekg/dns"
-import "github.com/golang/groupcache/lru"
-import "gopkg.in/hlandau/madns.v1/merr"
-import "github.com/namecoin/ncdns/namecoin"
-import "github.com/namecoin/ncdns/util"
-import "github.com/namecoin/ncdns/ncdomain"
-import "github.com/namecoin/ncdns/tlshook"
-import "github.com/hlandau/xlog"
-import "sync"
-import "fmt"
-import "net"
-import "net/mail"
-import "strings"
-import "time"
+import (
+	"fmt"
+	"github.com/golang/groupcache/lru"
+	"github.com/hlandau/xlog"
+	"github.com/miekg/dns"
+	"github.com/namecoin/ncdns/namecoin"
+	"github.com/namecoin/ncdns/ncdomain"
+	"github.com/namecoin/ncdns/tlshook"
+	"github.com/namecoin/ncdns/util"
+	"gopkg.in/hlandau/madns.v1/merr"
+	"net"
+	"net/mail"
+	"strings"
+	"sync"
+	"time"
+)
 
 // Provides an abstract zone file for the Namecoin .bit TLD.
 type Backend struct {
@@ -53,6 +55,10 @@ type Config struct {
 	// Map names (like "d/example") to strings containing JSON values. Used to provide
 	// fake names for testing purposes. You don't need to use this.
 	FakeNames map[string]string
+
+	// Never try to lookup via Namecoin; anything not in FakeNames doesn't exist.
+	// Testing use only.
+	FakesOnly bool
 }
 
 // Creates a new Namecoin backend.
@@ -61,9 +67,6 @@ func New(cfg *Config) (backend *Backend, err error) {
 
 	b.cfg = *cfg
 	b.nc = b.cfg.NamecoinConn
-	//b.nc.Username = cfg.RPCUsername
-	//b.nc.Password = cfg.RPCPassword
-	//b.nc.Server = cfg.RPCAddress
 
 	b.cache.MaxEntries = cfg.CacheMaxEntries
 	if b.cache.MaxEntries == 0 {
@@ -258,6 +261,7 @@ func (tx *btx) doMetaDomain() (rrs []dns.RR, err error) {
 func (tx *btx) doUserDomain() (rrs []dns.RR, err error) {
 	ncname, err := util.BasenameToNamecoinKey(tx.basename)
 	if err != nil {
+		err = merr.ErrNoSuchDomain
 		return
 	}
 
@@ -333,6 +337,10 @@ func (b *Backend) resolveName(name string) (jsonValue string, err error) {
 			return "", merr.ErrNoSuchDomain
 		}
 		return fv, nil
+	}
+
+	if b.cfg.FakesOnly {
+		return "", merr.ErrNoSuchDomain
 	}
 
 	// The btcjson package has quite a long timeout, far in excess of standard

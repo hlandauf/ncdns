@@ -1,17 +1,20 @@
+// Package ncdomain parses JSON values conforming to the Namecoin d/ namespace
+// specification and translates them into DNS RRs.
 package ncdomain
 
-import "encoding/json"
-import "net"
-import "fmt"
-import "github.com/miekg/dns"
-import "encoding/base64"
-import "encoding/hex"
-import "github.com/namecoin/ncdns/util"
-import "strings"
-import "strconv"
+import (
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"github.com/miekg/dns"
+	"github.com/namecoin/ncdns/util"
+	"net"
+	"strings"
 
-import "github.com/namecoin/ncdns/x509"
-import "github.com/namecoin/ncdns/certdehydrate"
+	"github.com/namecoin/ncdns/certdehydrate"
+	"github.com/namecoin/ncdns/x509"
+)
 
 const depthLimit = 16
 const mergeDepthLimit = 4
@@ -219,7 +222,14 @@ func (v *Value) appendDSs(out []dns.RR, suffix, apexSuffix string) ([]dns.RR, er
 
 func (v *Value) appendMXs(out []dns.RR, suffix, apexSuffix string) ([]dns.RR, error) {
 	for _, mx := range v.MX {
-		out = append(out, mx)
+		qn, ok := v.qualify(mx.Mx, suffix, apexSuffix)
+		if !ok {
+			continue
+		}
+
+		mx2 := *mx
+		mx2.Mx = qn
+		out = append(out, &mx2)
 	}
 
 	return out, nil
@@ -255,7 +265,6 @@ func (v *Value) appendTLSA(out []dns.RR, suffix, apexSuffix string) ([]dns.RR, e
 	}
 
 	for _, cert := range v.TLSAGenerated {
-
 		template := cert
 
 		_, nameNoPort := util.SplitDomainTail(suffix)
@@ -270,7 +279,7 @@ func (v *Value) appendTLSA(out []dns.RR, suffix, apexSuffix string) ([]dns.RR, e
 		derBytesHex := hex.EncodeToString(derBytes)
 
 		out = append(out, &dns.TLSA{
-			Hdr: dns.RR_Header{Name: suffix, Rrtype: dns.TypeTLSA, Class: dns.ClassINET,
+			Hdr: dns.RR_Header{Name: "", Rrtype: dns.TypeTLSA, Class: dns.ClassINET,
 				Ttl: defaultTTL},
 			Usage:        uint8(3),
 			Selector:     uint8(0),
@@ -732,7 +741,6 @@ func parseImportImpl(rv map[string]interface{}, val *Value, resolve ResolveFunc,
 
 					err = parseMerge(rv, dv, val, resolve, errFunc, depth, mergeDepth+1, subs, relname, mergedNames)
 					if err != nil {
-						errFunc.add(err)
 						continue
 					}
 
@@ -748,9 +756,8 @@ func parseImportImpl(rv map[string]interface{}, val *Value, resolve ResolveFunc,
 
 	if err == nil {
 		err = fmt.Errorf("unknown import/delegate field format")
+		errFunc.add(err)
 	}
-
-	errFunc.add(err)
 
 	return succeeded, err
 }
@@ -867,7 +874,7 @@ func parseTLSADANE(tlsa1dane interface{}, v *Value) error {
 	if tlsa, ok := tlsa1dane.([]interface{}); ok {
 		// Format: ["443", "tcp", 1, 2, 3, "base64 certificate data"]
 		if len(tlsa) < 4 {
-			return fmt.Errorf("TLSA item must have six items")
+			return fmt.Errorf("TLSA item must have four items")
 		}
 
 		a1, ok := tlsa[0].(float64)
@@ -932,24 +939,28 @@ func parseTLSA(rv map[string]interface{}, v *Value, errFunc ErrorFunc) {
 				tlsa1m = tlsa1.(map[string]interface{})
 			}
 
+			haveAny := false
 			if tlsa1dehydrated, ok := tlsa1m["d8"]; ok {
 				err := parseTLSADehydrated(tlsa1dehydrated, v)
-				if err == nil {
-					continue
+				if err != nil {
+					errFunc.add(err)
 				}
-				errFunc.add(err)
+				haveAny = true
 			}
 
 			if tlsa1dane, ok := tlsa1m["dane"]; ok {
 				err := parseTLSADANE(tlsa1dane, v)
-				if err == nil {
-					continue
+				if err != nil {
+					errFunc.add(err)
 				}
-				errFunc.add(err)
+				haveAny = true
 			}
 
-			errFunc.add(fmt.Errorf("Unknown TLSA item format"))
+			if !haveAny {
+				errFunc.add(fmt.Errorf("Unknown TLSA item format"))
+			}
 		}
+
 		return
 	}
 
@@ -1141,18 +1152,6 @@ func parseSingleService(rv map[string]interface{}, svc interface{}, v *Value, er
 	})
 
 	return
-}
-
-func convServiceValue(x interface{}) (string, error) {
-	if x == nil {
-		return "", nil
-	} else if f, ok := x.(float64); ok {
-		return strconv.FormatInt(int64(f), 10), nil
-	} else if s, ok := x.(string); ok {
-		return s, nil
-	} else {
-		return "", fmt.Errorf("malformed value: first item must be a string (application protocol)")
-	}
 }
 
 func parseMap(rv map[string]interface{}, v *Value, resolve ResolveFunc, errFunc ErrorFunc, depth, mergeDepth int, relname string) {

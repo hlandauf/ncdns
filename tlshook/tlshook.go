@@ -51,7 +51,5 @@ func DomainValueHookTLS(qname string, ncv *ncdomain.Value) (err error) {
 	certinject.CleanCerts()
 
 	err = nil
-
 	return
-
 }

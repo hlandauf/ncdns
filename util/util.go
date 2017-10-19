@@ -92,11 +92,16 @@ func SplitDomainByFloatingAnchor(qname, anchor string) (subname, basename, rootn
 	return
 }
 
+var (
+	ErrInvalidDomainName = fmt.Errorf("invalid domain name")
+	ErrInvalidDomainKey  = fmt.Errorf("invalid domain name key")
+)
+
 // Convert a domain name basename (e.g. "example") to a Namecoin domain name
 // key name ("d/example").
 func BasenameToNamecoinKey(basename string) (string, error) {
 	if !ValidateDomainLabel(basename) {
-		return "", fmt.Errorf("invalid domain name")
+		return "", ErrInvalidDomainName
 	}
 	return basenameToNamecoinKey(basename), nil
 }
@@ -109,12 +114,12 @@ func basenameToNamecoinKey(basename string) string {
 // basename ("example").
 func NamecoinKeyToBasename(key string) (string, error) {
 	if !strings.HasPrefix(key, "d/") {
-		return "", fmt.Errorf("not a valid domain name key")
+		return "", ErrInvalidDomainKey
 	}
 
 	key = key[2:]
 	if !ValidateDomainLabel(key) {
-		return "", fmt.Errorf("not a valid domain name key")
+		return "", ErrInvalidDomainKey
 	}
 
 	return key, nil
@@ -212,11 +217,11 @@ func ParseFuzzyDomainName(name string) (string, error) {
 	if strings.HasSuffix(name, ".bit") {
 		name = name[0 : len(name)-4]
 		if !ValidateDomainLabel(name) {
-			return "", fmt.Errorf("invalid domain name")
+			return "", ErrInvalidDomainName
 		}
 		return name, nil
 	}
-	return "", fmt.Errorf("invalid domain name")
+	return "", ErrInvalidDomainName
 }
 
 func ParseFuzzyDomainNameNC(name string) (bareName string, namecoinKey string, err error) {
